@@ -1,24 +1,30 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpproxy"
-	"go.uber.org/automaxprocs/maxprocs"
-	"golang.org/x/time/rate"
+	"io"
 	"io/ioutil"
+	"log"
+	"mime/multipart"
 	"net"
 	url2 "net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpproxy"
+	"go.uber.org/automaxprocs/maxprocs"
+	"golang.org/x/time/rate"
 )
 
 var (
@@ -112,6 +118,7 @@ type ClientOpt struct {
 	url       string
 	method    string
 	headers   []string
+	formData  []string
 	bodyBytes []byte
 	bodyFile  string
 
@@ -226,6 +233,17 @@ func buildRequestClient(opt *ClientOpt, r *int64, w *int64) (*fasthttp.HostClien
 			return nil, nil, fmt.Errorf("invalid header: %s", h)
 		}
 		requestHeader.Set(n[0], n[1])
+	}
+
+	if opt.formData != nil && (opt.bodyFile != "" || opt.bodyBytes != nil) {
+		return nil, nil, fmt.Errorf("either form data or body can be defined but not both. formData: '%s', bodyFile: '%s', bodyBytes: '%s'", opt.formData, opt.bodyFile, opt.bodyBytes)
+	}
+
+	for _, fd := range opt.formData {
+		n := strings.SplitN(fd, "=", 2)
+		if len(n) != 2 {
+			return nil, nil, fmt.Errorf("invalid multipart/form data: %s", fd)
+		}
 	}
 
 	return httpClient, &requestHeader, nil
@@ -362,9 +380,62 @@ func (r *Requester) Run() {
 						continue
 					}
 					req.SetBodyStream(file, -1)
+				} else if r.clientOpt.formData != nil {
+
+					body := &bytes.Buffer{}
+					writer := multipart.NewWriter(body)
+
+					for _, fd := range r.clientOpt.formData {
+						n := strings.SplitN(fd, "=", 2)
+						key := n[0]
+						value := n[1]
+
+						if strings.HasPrefix(value, "@") {
+							//handle file
+							fileName := (value)[1:]
+							file, err := os.Open(fileName)
+							if err != nil {
+								log.Fatalf("Could not write file of form data. Key: '%s' Value: '%s' Error: '%s'", key, value, err)
+								return
+							}
+							defer file.Close()
+
+							part, err := writer.CreateFormFile(key, filepath.Base(value))
+							if err != nil {
+								log.Fatalf("Could not create writer of form data. Key: '%s' Value: '%s' Error: '%s'", key, value, err)
+								return
+							}
+
+							_, err = io.Copy(part, file)
+							if err != nil {
+								log.Fatalf("Could not write file of form data. Key: '%s' Value: '%s' Error: '%s'", key, value, err)
+								return
+							}
+						} else {
+							//form parameter
+							_ = writer.WriteField(key, value)
+						}
+					}
+
+					req.Header.SetMultipartFormBoundary(writer.Boundary())
+
+					err := writer.Close()
+					if err != nil {
+						log.Fatalf("Could not close form data. Error: '%s'", err)
+						return
+					}
+
+					req.SetBodyRaw(body.Bytes())
+
+					_, err = req.MultipartForm()
+					if err != nil {
+						log.Fatalf("Could not create Multipart Form. Error: '%s'", err)
+						return
+					}
 				} else {
 					req.SetBodyRaw(r.clientOpt.bodyBytes)
 				}
+
 				resp.Reset()
 				rr := recordPool.Get().(*ReportRecord)
 				r.DoRequest(req, resp, rr)

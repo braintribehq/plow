@@ -30,6 +30,7 @@ var (
 	method      = kingpin.Flag("method", "HTTP method").Default("GET").Short('m').String()
 	headers     = kingpin.Flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
 	host        = kingpin.Flag("host", "Host header").String()
+	formData    = kingpin.Flag("form", "Multipart/form-data. 'key=value' for parameters, 'key=@file' for files").Short('F').PlaceHolder("K=V").Strings()
 	contentType = kingpin.Flag("content", "Content-Type header").Short('T').String()
 	cert        = kingpin.Flag("cert", "Path to the client's TLS Certificate").ExistingFile()
 	key         = kingpin.Flag("key", "Path to the client's TLS Certificate Private Key").ExistingFile()
@@ -88,6 +89,7 @@ Examples:
 
   plow http://127.0.0.1:8080/ -c 20 -n 100000
   plow https://httpbin.org/post -c 20 -d 5m --body @file.json -T 'application/json' -m POST
+  plow http://127.0.0.1:8080/ -c 1 -n 1 -F foo=bar -F "fooFile=@bar.pdf" -m POST
 
 {{if .Context.Flags -}}
 {{T "Flags:"}}
@@ -220,6 +222,7 @@ func main() {
 		url:       *url,
 		method:    *method,
 		headers:   *headers,
+		formData:  *formData,
 		bodyBytes: bodyBytes,
 		bodyFile:  bodyFile,
 
