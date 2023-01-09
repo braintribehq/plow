@@ -100,6 +100,7 @@ Examples:
 
   plow http://127.0.0.1:8080/ -c 20 -n 100000
   plow https://httpbin.org/post -c 20 -d 5m --body @file.json -T 'application/json' -m POST
+  plow http://127.0.0.1:8080/ -c 1 -n 1 -F foo=bar -F "fooFile=@bar.pdf" -m POST
 
 Flags:
       --help                   Show context-sensitive help.
