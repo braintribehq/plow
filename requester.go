@@ -395,10 +395,9 @@ func (r *Requester) Run() {
 							fileName := (value)[1:]
 							file, err := os.Open(fileName)
 							if err != nil {
-								log.Fatalf("Could not write file of form data. Key: '%s' Value: '%s' Error: '%s'", key, value, err)
+								log.Fatalf("Could not write file of form data. Could not open file: '%s'. Key: '%s' Value: '%s' Error: '%s'", fileName, key, value, err)
 								return
 							}
-							defer file.Close()
 
 							part, err := writer.CreateFormFile(key, filepath.Base(value))
 							if err != nil {
@@ -408,7 +407,13 @@ func (r *Requester) Run() {
 
 							_, err = io.Copy(part, file)
 							if err != nil {
-								log.Fatalf("Could not write file of form data. Key: '%s' Value: '%s' Error: '%s'", key, value, err)
+								log.Fatalf("Could not write file of form data. Could not copy file. Key: '%s' Value: '%s' Error: '%s'", key, value, err)
+								return
+							}
+
+							file.Close()
+							if err != nil {
+								log.Fatalf("Could not close file: '%s'", fileName)
 								return
 							}
 						} else {
